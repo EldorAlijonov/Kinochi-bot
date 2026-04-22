@@ -1,4 +1,6 @@
 import asyncio
+import json
+from types import SimpleNamespace
 
 from sqlalchemy.exc import IntegrityError
 
@@ -32,15 +34,53 @@ class SubscriptionService:
             cache_store._items.pop(cls.ACTIVE_CACHE_KEY, None)
 
     async def _cache_active_subscriptions(self, subscriptions: list) -> list:
-        if not getattr(self.store, "supports_complex_values", False):
+        if getattr(self.store, "supports_complex_values", False):
+            await self.store.set(
+                self.ACTIVE_CACHE_KEY,
+                list(subscriptions),
+                ttl_seconds=SUBSCRIPTION_CACHE_TTL_SECONDS,
+            )
+            return subscriptions
+
+        if not getattr(self.store, "supports_json_values", False):
             return subscriptions
 
         await self.store.set(
             self.ACTIVE_CACHE_KEY,
-            list(subscriptions),
+            json.dumps([self._subscription_to_cache(sub) for sub in subscriptions]),
             ttl_seconds=SUBSCRIPTION_CACHE_TTL_SECONDS,
         )
         return subscriptions
+
+    @staticmethod
+    def _subscription_to_cache(sub) -> dict:
+        return {
+            "id": getattr(sub, "id", None),
+            "title": getattr(sub, "title", None),
+            "subscription_type": getattr(sub, "subscription_type", None),
+            "chat_id": getattr(sub, "chat_id", None),
+            "chat_username": getattr(sub, "chat_username", None),
+            "invite_link": getattr(sub, "invite_link", None),
+            "is_active": getattr(sub, "is_active", True),
+        }
+
+    @staticmethod
+    def _subscriptions_from_cache(raw_value) -> list | None:
+        if raw_value is None:
+            return None
+
+        if isinstance(raw_value, list):
+            return raw_value
+
+        try:
+            rows = json.loads(raw_value)
+        except (TypeError, ValueError):
+            return None
+
+        if not isinstance(rows, list):
+            return None
+
+        return [SimpleNamespace(**row) for row in rows if isinstance(row, dict)]
 
     async def create_public_channel(self, title: str, raw_value: str):
         username, invite_link = parse_username_or_link(raw_value)
@@ -172,10 +212,15 @@ class SubscriptionService:
         return {"ok": True, "subscription": subscription}
 
     async def get_active_subscriptions(self, use_cache: bool = True):
-        if use_cache and getattr(self.store, "supports_complex_values", False):
-            cached = await self.store.get(self.ACTIVE_CACHE_KEY)
-            if cached is not None:
-                return list(cached)
+        if use_cache:
+            raw_cached = await self.store.get(self.ACTIVE_CACHE_KEY)
+            if getattr(self.store, "supports_complex_values", False):
+                if raw_cached is not None:
+                    return list(raw_cached)
+            else:
+                cached = self._subscriptions_from_cache(raw_cached)
+                if cached is not None:
+                    return cached
 
         subscriptions = await self.repository.get_active()
         if use_cache:

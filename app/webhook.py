@@ -7,8 +7,12 @@ from aiogram.exceptions import TelegramAPIError
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 
 from app.core.config import settings
+from app.database.db import engine
 from app.database.db import init_db
 from app.services.broadcast_worker import BroadcastWorker
+from app.services.runtime_store import cache_store
+from app.services.startup_checks import validate_runtime_dependencies
+from sqlalchemy import text
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +21,35 @@ async def healthcheck(request: web.Request) -> web.Response:
     return web.json_response({"status": "ok", "mode": "webhook"})
 
 
+async def readiness(request: web.Request) -> web.Response:
+    checks = {"db": False, "redis": False}
+
+    try:
+        async with engine.connect() as connection:
+            await connection.execute(text("SELECT 1"))
+        checks["db"] = True
+    except Exception:
+        logger.exception("Healthcheck DB ulanishida xatolik")
+
+    try:
+        checks["redis"] = await cache_store.ping()
+    except Exception:
+        logger.exception("Healthcheck runtime store ulanishida xatolik")
+
+    status_code = 200 if all(checks.values()) else 503
+    return web.json_response(
+        {
+            "status": "ok" if status_code == 200 else "degraded",
+            "mode": "webhook",
+            "checks": checks,
+        },
+        status=status_code,
+    )
+
+
 async def setup_webhook(bot: Bot, dispatcher: Dispatcher) -> None:
+    await validate_runtime_dependencies()
+
     if settings.auto_init_db:
         await init_db()
 
@@ -67,7 +99,7 @@ def create_webhook_app(bot: Bot, dispatcher: Dispatcher) -> web.Application:
     app = web.Application()
     app["broadcast_worker"] = BroadcastWorker(bot)
     app.router.add_get("/health", healthcheck)
-    app.router.add_get("/healthz", healthcheck)
+    app.router.add_get("/healthz", readiness)
 
     SimpleRequestHandler(
         dispatcher=dispatcher,

@@ -81,6 +81,12 @@ class UserRepository:
         )
         return result.scalar_one_or_none()
 
+    async def get_is_banned(self, telegram_id: int) -> bool | None:
+        result = await self.session.execute(
+            select(User.is_banned).where(User.telegram_id == telegram_id)
+        )
+        return result.scalar_one_or_none()
+
     async def get_recent_users(self, limit: int = 10) -> list[User]:
         result = await self.session.execute(
             select(User)

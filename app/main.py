@@ -36,6 +36,7 @@ from app.middlewares.rate_limit import RateLimitMiddleware
 from app.middlewares.subscription_middleware import SubscriptionMiddleware
 from app.middlewares.user_tracking import UserTrackingMiddleware
 from app.services.broadcast_worker import BroadcastWorker
+from app.services.startup_checks import validate_runtime_dependencies
 from app.webhook import create_webhook_app
 
 logger = logging.getLogger(__name__)
@@ -90,6 +91,7 @@ def create_dispatcher() -> Dispatcher:
 async def start_polling() -> None:
     configure_logging()
     settings.validate()
+    await validate_runtime_dependencies()
     if AUTO_INIT_DB:
         await init_db()
 

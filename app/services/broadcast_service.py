@@ -22,6 +22,7 @@ class BroadcastTarget:
 
 class BroadcastService:
     BATCH_SIZE = 100
+    DELIVERY_FLUSH_SIZE = 100
     PROGRESS_INTERVAL = 500
     SLEEP_SECONDS = 0.05
 
@@ -118,13 +119,21 @@ class BroadcastService:
         self._require_broadcast_repository()
         stats = self._empty_stats()
         processed = 0
+        pending_deliveries = 0
 
         bot_user = await bot.get_me()
         async for target in self._iter_targets(campaign.target_type):
             await self._send_campaign_to_target(bot, bot_user.id, campaign, target, stats)
             processed += 1
+            pending_deliveries += 1
+
+            if pending_deliveries >= self.DELIVERY_FLUSH_SIZE:
+                await self._flush_deliveries()
+                pending_deliveries = 0
 
             if progress_callback and processed % self.PROGRESS_INTERVAL == 0:
+                await self._flush_deliveries()
+                pending_deliveries = 0
                 await progress_callback(processed, stats)
 
             if cancel_checker and await cancel_checker():
@@ -132,6 +141,9 @@ class BroadcastService:
                 break
 
             await asyncio.sleep(self.SLEEP_SECONDS)
+
+        if pending_deliveries:
+            await self._flush_deliveries()
 
         if stats.get("cancelled"):
             status = "cancelled"
@@ -272,7 +284,7 @@ class BroadcastService:
 
             resolved_target = await self._resolve_target(bot, bot_id, target)
             sent_message = await self._send_campaign_message(bot, campaign, resolved_target.identifier)
-            await self.broadcast_repository.create_delivery(
+            await self._add_delivery(
                 campaign_id=campaign.id,
                 target_type=resolved_target.target_type,
                 target_chat_id=resolved_target.target_chat_id,
@@ -352,7 +364,7 @@ class BroadcastService:
         )
 
     async def _record_failed_delivery(self, campaign_id: int, target: BroadcastTarget, error: str):
-        await self.broadcast_repository.create_delivery(
+        await self._add_delivery(
             campaign_id=campaign_id,
             target_type=target.target_type,
             target_chat_id=target.target_chat_id,
@@ -361,6 +373,17 @@ class BroadcastService:
             delivery_status="failed",
             error_text=error[:1000],
         )
+
+    async def _add_delivery(self, **kwargs) -> None:
+        if hasattr(self.broadcast_repository, "add_delivery"):
+            self.broadcast_repository.add_delivery(**kwargs)
+            return
+
+        await self.broadcast_repository.create_delivery(**kwargs)
+
+    async def _flush_deliveries(self) -> None:
+        if hasattr(self.broadcast_repository, "flush_deliveries"):
+            await self.broadcast_repository.flush_deliveries()
 
     async def _resolve_target(self, bot, bot_id: int, target: BroadcastTarget) -> BroadcastTarget:
         if target.target_type == "users":

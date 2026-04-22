@@ -52,6 +52,10 @@ class Settings:
 
     @property
     def database_url(self) -> str:
+        explicit_url = (os.getenv("DATABASE_URL") or "").strip()
+        if explicit_url:
+            return explicit_url
+
         return (
             f"postgresql+asyncpg://{self.db_user}:{self.db_password}"
             f"@{self.db_host}:{self.db_port}/{self.db_name}"
@@ -71,7 +75,11 @@ class Settings:
 
     def validate(self) -> None:
         if not self.bot_token:
-            raise RuntimeError("TOKEN env o'zgaruvchisi topilmadi.")
+            raise RuntimeError("TOKEN yoki BOT_TOKEN env o'zgaruvchisi topilmadi.")
+        if self.is_production and not self.admins:
+            raise RuntimeError("Production rejimida ADMINS bo'sh bo'lmasligi kerak.")
+        if self.is_production and not self.redis_url:
+            raise RuntimeError("Production rejimida REDIS_URL majburiy.")
         if self.is_production and self.auto_init_db:
             raise RuntimeError(
                 "Production rejimida AUTO_INIT_DB=false bo'lishi kerak. "
@@ -88,7 +96,7 @@ class Settings:
 
 def load_settings() -> Settings:
     return Settings(
-        bot_token=(os.getenv("TOKEN") or "").strip(),
+        bot_token=(os.getenv("BOT_TOKEN") or os.getenv("TOKEN") or "").strip(),
         admins=tuple(_parse_admins(os.getenv("ADMINS"))),
         db_host=(os.getenv("DB_HOST") or "localhost").strip(),
         db_port=int((os.getenv("DB_PORT") or "5432").strip()),

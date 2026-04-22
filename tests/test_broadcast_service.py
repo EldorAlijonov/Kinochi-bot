@@ -9,6 +9,7 @@ from app.services.broadcast_service import BroadcastService, BroadcastTarget
 class FakeBroadcastRepository:
     def __init__(self):
         self.deliveries = []
+        self.flush_count = 0
         self.campaign_status = None
         self.deleted_status = None
 
@@ -18,6 +19,13 @@ class FakeBroadcastRepository:
     async def create_delivery(self, **kwargs):
         self.deliveries.append(kwargs)
         return SimpleNamespace(id=len(self.deliveries), **kwargs)
+
+    def add_delivery(self, **kwargs):
+        self.deliveries.append(kwargs)
+        return SimpleNamespace(id=len(self.deliveries), **kwargs)
+
+    async def flush_deliveries(self):
+        self.flush_count += 1
 
     async def mark_campaign_status(self, campaign_id: int, status: str):
         self.campaign_status = status
@@ -120,7 +128,7 @@ class BroadcastServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(campaign.status, "queued")
         self.assertEqual(campaign.file_id, "photo-file-id")
 
-    async def test_send_campaign_commits_delivery_after_each_target_and_uses_file_id(self):
+    async def test_send_campaign_batches_delivery_flushes_and_uses_file_id(self):
         repository = FakeBroadcastRepository()
         service = BroadcastService(
             user_repository=FakeUserRepository(),
@@ -141,6 +149,7 @@ class BroadcastServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["users"], 2)
         self.assertEqual(len(repository.deliveries), 2)
         self.assertEqual(repository.deliveries[0]["delivery_status"], "sent")
+        self.assertEqual(repository.flush_count, 1)
         self.assertEqual(repository.campaign_status, "sent")
 
     async def test_delete_campaign_marks_partial_deleted_when_any_delete_fails(self):

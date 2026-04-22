@@ -14,6 +14,9 @@ class RateLimitStore(Protocol):
     ) -> bool:
         ...
 
+    async def ping(self) -> bool:
+        ...
+
 
 class MemoryRateLimitStore:
     def __init__(self) -> None:
@@ -38,6 +41,9 @@ class MemoryRateLimitStore:
         bucket.append(now)
         return False
 
+    async def ping(self) -> bool:
+        return True
+
 
 class CacheStore(Protocol):
     async def get(self, key: str) -> Any | None:
@@ -47,6 +53,9 @@ class CacheStore(Protocol):
         ...
 
     async def delete(self, key: str) -> None:
+        ...
+
+    async def ping(self) -> bool:
         ...
 
 
@@ -74,9 +83,13 @@ class MemoryCacheStore:
     async def delete(self, key: str) -> None:
         self._items.pop(key, None)
 
+    async def ping(self) -> bool:
+        return True
+
 
 class RedisRuntimeStore:
     supports_complex_values = False
+    supports_json_values = True
 
     def __init__(self, redis_url: str) -> None:
         try:
@@ -109,6 +122,9 @@ class RedisRuntimeStore:
 
     async def delete(self, key: str) -> None:
         await self.redis.delete(f"cache:{key}")
+
+    async def ping(self) -> bool:
+        return bool(await self.redis.ping())
 
 
 def build_runtime_stores(redis_url: str | None = None) -> tuple[RateLimitStore, CacheStore]:
