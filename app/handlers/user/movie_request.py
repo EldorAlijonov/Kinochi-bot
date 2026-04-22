@@ -41,7 +41,7 @@ async def handle_movie_code_request(message: types.Message):
 
     if not movie:
         await message.answer(
-            "Kino topilmadi. Kod noto'g'ri bo'lishi, kino o'chirilgan bo'lishi yoki baza vaqtincha noaktiv holatda bo'lishi mumkin."
+            "Kino topilmadi. Kod noto'g'ri!"
         )
         return
 
