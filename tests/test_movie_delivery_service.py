@@ -54,7 +54,7 @@ class MovieDeliveryServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(bot.copy_message_kwargs["message_id"], 15)
         self.assertTrue(bot.copy_message_kwargs["protect_content"])
         self.assertIn("reply_markup", bot.copy_message_kwargs)
-        self.assertIn("🎬 Hayot Uchun Kurash", bot.copy_message_kwargs["caption"])
+        self.assertNotIn("Hayot Uchun Kurash", bot.copy_message_kwargs["caption"])
         self.assertNotIn("Kino kodi", bot.copy_message_kwargs["caption"])
         self.assertTrue(bot.copy_message_kwargs["caption"].endswith("🤖 @kino_bot"))
 

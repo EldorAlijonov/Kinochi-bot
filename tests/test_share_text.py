@@ -17,6 +17,7 @@ class ShareTextTests(unittest.TestCase):
     def test_build_general_share_text_includes_referral_link_and_bot_value(self):
         text = build_general_share_text("my_movie_bot", "ref_123")
 
+        self.assertTrue(text.startswith("https://t.me/my_movie_bot https://t.me/my_movie_bot?start=ref_123"))
         self.assertIn("Kino olish uchun qulay bot", text)
         self.assertIn("Kino kodini yuborib kerakli kinoni oling", text)
         self.assertIn("Kirish:", text)
@@ -25,6 +26,7 @@ class ShareTextTests(unittest.TestCase):
     def test_build_movie_share_text_uses_movie_title_and_code_link(self):
         text = build_movie_share_text("@my_movie_bot", "Hayot Uchun Kurash", "0007")
 
+        self.assertTrue(text.startswith("https://t.me/my_movie_bot https://t.me/my_movie_bot?start=0007"))
         self.assertIn('"Hayot Uchun Kurash" filmini olish uchun botga kiring', text)
         self.assertIn("Hayot Uchun Kurash", text)
         self.assertIn("Kirish:", text)

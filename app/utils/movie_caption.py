@@ -142,7 +142,7 @@ def build_user_movie_caption_from_storage(
     bot_username: str | None = None,
 ) -> str:
     metadata = extract_admin_metadata(storage_caption, keep_size=True, title=title)
-    lines = [f"{MOVIE_CODE_ICON} {title}"]
+    lines = []
 
     if metadata:
         lines.extend(["", *metadata])
@@ -249,4 +249,4 @@ def _build_bot_username_line(bot_username: str | None) -> str | None:
     if not username.startswith("@"):
         username = f"@{username}"
 
-    return f"{BOT_USERNAME_ICON} {username}"
+    return f"{BOT_USERNAME_ICON} {username}\n"
