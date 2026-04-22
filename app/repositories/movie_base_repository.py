@@ -69,7 +69,7 @@ class MovieBaseRepository:
             .limit(limit)
             .offset(offset)
         )
-        return result.scalars().all()
+        return list(result.scalars().all())
 
     async def list_active_bases(self) -> list[MovieBase]:
         result = await self.session.execute(
@@ -77,7 +77,7 @@ class MovieBaseRepository:
             .where(MovieBase.is_active.is_(True))
             .order_by(MovieBase.id.desc())
         )
-        return result.scalars().all()
+        return list(result.scalars().all())
 
     async def list_inactive_bases(self) -> list[MovieBase]:
         result = await self.session.execute(
@@ -85,7 +85,7 @@ class MovieBaseRepository:
             .where(MovieBase.is_active.is_(False))
             .order_by(MovieBase.id.desc())
         )
-        return result.scalars().all()
+        return list(result.scalars().all())
 
     async def get_paginated_by_active(
         self,
@@ -100,13 +100,13 @@ class MovieBaseRepository:
             .limit(limit)
             .offset(offset)
         )
-        return result.scalars().all()
+        return list(result.scalars().all())
 
     async def count_all(self) -> int:
         result = await self.session.execute(
             select(func.count()).select_from(MovieBase)
         )
-        return result.scalar_one()
+        return result.scalar_one() or 0
 
     async def count_bases(self) -> int:
         return await self.count_all()
@@ -120,7 +120,7 @@ class MovieBaseRepository:
             .select_from(MovieBase)
             .where(MovieBase.is_active.is_(is_active))
         )
-        return result.scalar_one()
+        return result.scalar_one() or 0
 
     async def activate_base(self, base_id: int) -> bool:
         return await self._set_active(base_id, True)

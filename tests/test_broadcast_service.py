@@ -63,10 +63,30 @@ class FakeUserRepository:
     async def list_user_targets(self, last_telegram_id: int = 0, limit: int = 100):
         return [1001, 1002] if last_telegram_id == 0 else []
 
+    async def count_users(self):
+        return 2
+
+
+class ManyUserRepository:
+    def __init__(self, total=250):
+        self.total = total
+
+    async def list_user_targets(self, last_telegram_id: int = 0, limit: int = 100):
+        next_id = last_telegram_id + 1
+        if next_id > self.total:
+            return []
+        return list(range(next_id, min(self.total, next_id + limit - 1) + 1))
+
+    async def count_users(self):
+        return self.total
+
 
 class FakeBot:
     async def get_me(self):
         return SimpleNamespace(id=999)
+
+    async def send_message(self, **kwargs):
+        return SimpleNamespace(message_id=kwargs["chat_id"] + 100)
 
     async def send_photo(self, **kwargs):
         return SimpleNamespace(message_id=kwargs["chat_id"] + 100)
@@ -151,6 +171,44 @@ class BroadcastServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(repository.deliveries[0]["delivery_status"], "sent")
         self.assertEqual(repository.flush_count, 1)
         self.assertEqual(repository.campaign_status, "sent")
+
+    async def test_send_campaign_progress_callback_is_batched(self):
+        repository = FakeBroadcastRepository()
+        service = BroadcastService(
+            user_repository=ManyUserRepository(total=250),
+            broadcast_repository=repository,
+        )
+        service.PROGRESS_INTERVAL = 100
+        service.SLEEP_SECONDS = 0
+        campaign = SimpleNamespace(
+            id=1,
+            content_type="text",
+            text="Reklama",
+            file_id=None,
+            source_chat_id=10,
+            source_message_id=20,
+            target_type="users",
+        )
+        calls = []
+
+        async def progress_callback(processed, stats):
+            calls.append((processed, dict(stats)))
+
+        await service.send_campaign(FakeBot(), campaign, progress_callback=progress_callback)
+
+        self.assertEqual([call[0] for call in calls], [100, 200])
+
+    async def test_campaign_preview_includes_estimated_recipients(self):
+        service = BroadcastService(user_repository=FakeUserRepository())
+
+        preview = service.build_campaign_preview(
+            content_type="text",
+            text="Salom",
+            target_type="users",
+            estimate={"users": 2, "groups": 0, "channels": 0},
+        )
+
+        self.assertIn("Taxminiy userlar: <b>2</b>", preview)
 
     async def test_delete_campaign_marks_partial_deleted_when_any_delete_fails(self):
         repository = FakeBroadcastRepository()

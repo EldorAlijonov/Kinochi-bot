@@ -11,6 +11,7 @@ from app.keyboards.admin.movie_base_inline import movie_base_navigation_keyboard
 from app.keyboards.admin.movies import MOVIES_LIST_BUTTON
 from app.repositories.movie_base_repository import MovieBaseRepository
 from app.services.movie_base_service import MovieBaseService
+from app.utils.callbacks import normalize_offset, normalize_page, parse_callback_int
 from app.utils.movie_base_link import format_movie_base_address
 from app.utils.text import safe_html
 
@@ -26,24 +27,26 @@ MOVIE_BASE_ERROR_MESSAGE = (
 
 
 async def build_movie_base_list(page: int):
+    page = normalize_page(page)
     try:
         async with async_session_maker() as session:
             repository = MovieBaseRepository(session)
             service = MovieBaseService(repository)
-            total_count = await service.count_bases()
+            total_count = await service.count_bases() or 0
 
             if total_count == 0:
                 return None, None
 
             total_pages = max(1, math.ceil(total_count / PAGE_SIZE))
             page = max(1, min(page, total_pages))
-            offset = (page - 1) * PAGE_SIZE
+            offset = normalize_offset((page - 1) * PAGE_SIZE)
             bases = await service.get_paginated_bases(PAGE_SIZE, offset)
     except SQLAlchemyError:
         logger.exception("Kino bazalari ro'yxatini olishda database xatosi")
         return MOVIE_BASE_ERROR_MESSAGE, None
 
     lines = [f"<b>Kinolar bazalari ro'yxati</b>\nSahifa: {page}/{total_pages}\n"]
+    bases = list(bases or [])
 
     for index, movie_base in enumerate(bases, start=offset + 1):
         status = "Aktiv" if movie_base.is_active else "Noaktiv"
@@ -78,7 +81,7 @@ async def show_movie_base_list(message: Message):
 
 @router.callback_query(F.data.startswith("movie_base_list:page:"))
 async def paginate_movie_base_list(callback: CallbackQuery):
-    page = int(callback.data.split(":")[2])
+    page = normalize_page(parse_callback_int(callback.data, 2, default=1))
     text, keyboard = await build_movie_base_list(page=page)
     if not text:
         await callback.answer("Hozircha kinolar bazalari yo'q.", show_alert=True)

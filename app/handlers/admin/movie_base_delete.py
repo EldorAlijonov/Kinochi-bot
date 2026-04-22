@@ -16,6 +16,7 @@ from app.keyboards.admin.movies import MOVIES_DELETE_BUTTON, movies_menu
 from app.repositories.movie_base_repository import MovieBaseRepository
 from app.services.movie_base_service import MovieBaseService
 from app.states.movie import DeleteMovieBaseState
+from app.utils.callbacks import STALE_CALLBACK_MESSAGE, normalize_offset, normalize_page, parse_callback_int
 from app.utils.text import safe_html
 
 router = Router()
@@ -30,22 +31,27 @@ MOVIE_BASE_DELETE_ERROR_MESSAGE = (
 
 
 async def build_movie_base_delete_list(page: int):
+    page = normalize_page(page)
     try:
         async with async_session_maker() as session:
             repository = MovieBaseRepository(session)
             service = MovieBaseService(repository)
-            total_count = await service.count_bases()
+            total_count = await service.count_bases() or 0
 
             if total_count == 0:
                 return None, None, 0
 
             total_pages = max(1, math.ceil(total_count / PAGE_SIZE))
             page = max(1, min(page, total_pages))
-            offset = (page - 1) * PAGE_SIZE
+            offset = normalize_offset((page - 1) * PAGE_SIZE)
             bases = await service.get_paginated_bases(PAGE_SIZE, offset)
     except SQLAlchemyError:
         logger.exception("O'chiriladigan kino bazalari ro'yxatini olishda database xatosi")
         return MOVIE_BASE_DELETE_ERROR_MESSAGE, None, 0
+
+    bases = list(bases or [])
+    if not bases:
+        return "Bazalar topilmadi.", None, page
 
     lines = [f"<b>O'chirish uchun bazani tanlang</b>\nSahifa: {page}/{total_pages}\n"]
     for index, movie_base in enumerate(bases, start=offset + 1):
@@ -86,7 +92,7 @@ async def show_movie_base_delete_menu(message: Message, state: FSMContext):
     F.data.startswith("movie_base_delete:page:"),
 )
 async def paginate_movie_base_delete_list(callback: CallbackQuery):
-    page = int(callback.data.split(":")[2])
+    page = normalize_page(parse_callback_int(callback.data, 2, default=1))
     text, keyboard, _ = await build_movie_base_delete_list(page=page)
     if not text:
         await callback.answer("Hozircha baza yo'q.", show_alert=True)
@@ -105,9 +111,11 @@ async def paginate_movie_base_delete_list(callback: CallbackQuery):
     F.data.startswith("movie_base_delete:select:"),
 )
 async def confirm_movie_base_delete(callback: CallbackQuery, state: FSMContext):
-    _, _, movie_base_id_str, page_str = callback.data.split(":")
-    movie_base_id = int(movie_base_id_str)
-    page = int(page_str)
+    movie_base_id = parse_callback_int(callback.data, 2)
+    page = normalize_page(parse_callback_int(callback.data, 3, default=1))
+    if movie_base_id is None:
+        await callback.answer(STALE_CALLBACK_MESSAGE, show_alert=True)
+        return
 
     try:
         async with async_session_maker() as session:
@@ -140,9 +148,11 @@ async def confirm_movie_base_delete(callback: CallbackQuery, state: FSMContext):
     F.data.startswith("movie_base_delete:confirm:"),
 )
 async def delete_movie_base(callback: CallbackQuery, state: FSMContext):
-    _, _, movie_base_id_str, page_str = callback.data.split(":")
-    movie_base_id = int(movie_base_id_str)
-    page = int(page_str)
+    movie_base_id = parse_callback_int(callback.data, 2)
+    page = normalize_page(parse_callback_int(callback.data, 3, default=1))
+    if movie_base_id is None:
+        await callback.answer(STALE_CALLBACK_MESSAGE, show_alert=True)
+        return
 
     try:
         async with async_session_maker() as session:
@@ -179,7 +189,7 @@ async def delete_movie_base(callback: CallbackQuery, state: FSMContext):
     F.data.startswith("movie_base_delete:cancel:"),
 )
 async def cancel_movie_base_delete(callback: CallbackQuery, state: FSMContext):
-    page = int(callback.data.split(":")[2])
+    page = normalize_page(parse_callback_int(callback.data, 2, default=1))
     text, keyboard, _ = await build_movie_base_delete_list(page=page)
     if not text:
         await state.clear()

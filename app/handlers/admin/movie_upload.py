@@ -20,6 +20,7 @@ from app.repositories.movie_repository import MovieRepository
 from app.services.movie_base_service import MovieBaseService
 from app.services.movie_service import MovieService
 from app.states.movie import UploadMovieState
+from app.utils.callbacks import STALE_CALLBACK_MESSAGE, normalize_offset, normalize_page, parse_callback_int
 from app.utils.checker import validate_bot_for_movie_base
 from app.utils.movie_base_link import format_movie_base_link
 from app.utils.text import safe_html
@@ -43,18 +44,19 @@ def _movie_database_error_message(error: SQLAlchemyError) -> str:
 
 
 async def build_movie_base_upload_list(page: int):
+    page = normalize_page(page)
     try:
         async with async_session_maker() as session:
             base_repository = MovieBaseRepository(session)
             base_service = MovieBaseService(base_repository)
-            total_count = await base_service.count_bases_by_status(True)
+            total_count = await base_service.count_bases_by_status(True) or 0
 
             if total_count == 0:
                 return None, None, 0
 
             total_pages = max(1, math.ceil(total_count / PAGE_SIZE))
             page = max(1, min(page, total_pages))
-            offset = (page - 1) * PAGE_SIZE
+            offset = normalize_offset((page - 1) * PAGE_SIZE)
             bases = await base_service.get_paginated_bases_by_status(
                 is_active=True,
                 limit=PAGE_SIZE,
@@ -63,6 +65,10 @@ async def build_movie_base_upload_list(page: int):
     except SQLAlchemyError as error:
         logger.exception("Kino yuklash bazalari ro'yxatini olishda database xatosi")
         return _movie_database_error_message(error), None, 0
+
+    bases = list(bases or [])
+    if not bases:
+        return "Bazalar topilmadi.", None, page
 
     text = (
         f"<b>Kino yuklash uchun bazani tanlang</b>\n"
@@ -103,7 +109,7 @@ async def start_movie_upload(message: Message, state: FSMContext):
     F.data.startswith("movie_upload:page:"),
 )
 async def paginate_movie_upload_bases(callback: CallbackQuery):
-    page = int(callback.data.split(":")[2])
+    page = normalize_page(parse_callback_int(callback.data, 2, default=1))
     text, keyboard, _ = await build_movie_base_upload_list(page=page)
     if not text:
         await callback.answer("Hozircha baza yo'q.", show_alert=True)
@@ -122,8 +128,10 @@ async def paginate_movie_upload_bases(callback: CallbackQuery):
     F.data.startswith("movie_upload:select:"),
 )
 async def select_movie_upload_base(callback: CallbackQuery, state: FSMContext):
-    _, _, movie_base_id_str, _ = callback.data.split(":")
-    movie_base_id = int(movie_base_id_str)
+    movie_base_id = parse_callback_int(callback.data, 2)
+    if movie_base_id is None:
+        await callback.answer(STALE_CALLBACK_MESSAGE, show_alert=True)
+        return
 
     try:
         async with async_session_maker() as session:

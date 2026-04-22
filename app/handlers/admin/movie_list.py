@@ -29,6 +29,7 @@ from app.keyboards.admin.movies import (
 from app.keyboards.admin.reply import admin_menu
 from app.repositories.movie_repository import MovieRepository
 from app.states.movie import DeleteMovieState
+from app.utils.callbacks import STALE_CALLBACK_MESSAGE, normalize_offset, normalize_page, parse_callback_int, parse_callback_parts
 from app.utils.checker import check_bot_permissions
 from app.utils.movie_admin_preview import build_movie_admin_preview
 from app.utils.movie_code import is_movie_code
@@ -52,17 +53,18 @@ def _movie_database_error_message(error: SQLAlchemyError) -> str:
 
 
 async def build_saved_movies_list(page: int, delete_mode: bool = False):
+    page = normalize_page(page)
     try:
         async with async_session_maker() as session:
             repository = MovieRepository(session)
-            total_count = await repository.count_active()
+            total_count = await repository.count_active() or 0
 
             if total_count == 0:
                 return None, None, 0
 
             total_pages = max(1, math.ceil(total_count / PAGE_SIZE))
             page = max(1, min(page, total_pages))
-            offset = (page - 1) * PAGE_SIZE
+            offset = normalize_offset((page - 1) * PAGE_SIZE)
             movies = await repository.list_movies(PAGE_SIZE, offset)
     except SQLAlchemyError as error:
         logger.exception("Kinolar ro'yxatini olishda database xatosi")
@@ -74,6 +76,7 @@ async def build_saved_movies_list(page: int, delete_mode: bool = False):
 
     title = "O'chirish uchun kinoni tanlang" if delete_mode else "Saqlangan kinolar ro'yxati"
     lines = [f"<b>{title}</b>\nSahifa: {page}/{total_pages}\n"]
+    movies = list(movies or [])
 
     for index, (movie, movie_base) in enumerate(movies, start=offset + 1):
         lines.append(build_movie_admin_preview(movie, movie_base, index=index))
@@ -112,7 +115,7 @@ async def show_saved_movies(message: Message, state: FSMContext):
 
 @router.callback_query(F.data.startswith("movie_list:page:"))
 async def paginate_saved_movies(callback: CallbackQuery):
-    page = int(callback.data.split(":")[2])
+    page = normalize_page(parse_callback_int(callback.data, 2, default=1))
     text, keyboard, _ = await build_saved_movies_list(page=page)
     if not text:
         await callback.answer("Hozircha saqlangan kino yo'q.", show_alert=True)
@@ -165,7 +168,7 @@ async def show_movie_delete_menu(message: Message, state: FSMContext):
     F.data.startswith("movie_delete:page:"),
 )
 async def paginate_movie_delete_list(callback: CallbackQuery):
-    page = int(callback.data.split(":")[2])
+    page = normalize_page(parse_callback_int(callback.data, 2, default=1))
     text, keyboard, _ = await build_saved_movies_list(page=page, delete_mode=True)
     if not text:
         await callback.answer("Hozircha saqlangan kino yo'q.", show_alert=True)
@@ -211,8 +214,16 @@ async def movie_delete_admin_panel(message: Message, state: FSMContext):
 
 @router.callback_query(F.data.startswith("movie_delete:select:"))
 async def select_movie_to_delete(callback: CallbackQuery, state: FSMContext):
-    _, _, code, page_str = callback.data.split(":")
-    await _show_delete_confirmation(callback, state, code=code, page=int(page_str))
+    parts = parse_callback_parts(callback.data, min_parts=4)
+    if parts is None:
+        await callback.answer(STALE_CALLBACK_MESSAGE, show_alert=True)
+        return
+    await _show_delete_confirmation(
+        callback,
+        state,
+        code=parts[2],
+        page=normalize_page(parse_callback_int(callback.data, 3, default=1)),
+    )
 
 
 @router.message(DeleteMovieState.waiting_code, F.text)
@@ -282,8 +293,17 @@ async def _show_delete_confirmation(
     F.data.startswith("movie_delete:db:"),
 )
 async def delete_movie_from_bot_only(callback: CallbackQuery, state: FSMContext):
-    _, _, code, page_str = callback.data.split(":")
-    await _delete_movie(callback, state, code=code, page=int(page_str), delete_channel_post=False)
+    parts = parse_callback_parts(callback.data, min_parts=4)
+    if parts is None:
+        await callback.answer(STALE_CALLBACK_MESSAGE, show_alert=True)
+        return
+    await _delete_movie(
+        callback,
+        state,
+        code=parts[2],
+        page=normalize_page(parse_callback_int(callback.data, 3, default=1)),
+        delete_channel_post=False,
+    )
 
 
 @router.callback_query(
@@ -291,8 +311,17 @@ async def delete_movie_from_bot_only(callback: CallbackQuery, state: FSMContext)
     F.data.startswith("movie_delete:channel:"),
 )
 async def delete_movie_from_bot_and_channel(callback: CallbackQuery, state: FSMContext):
-    _, _, code, page_str = callback.data.split(":")
-    await _delete_movie(callback, state, code=code, page=int(page_str), delete_channel_post=True)
+    parts = parse_callback_parts(callback.data, min_parts=4)
+    if parts is None:
+        await callback.answer(STALE_CALLBACK_MESSAGE, show_alert=True)
+        return
+    await _delete_movie(
+        callback,
+        state,
+        code=parts[2],
+        page=normalize_page(parse_callback_int(callback.data, 3, default=1)),
+        delete_channel_post=True,
+    )
 
 
 async def _delete_movie(
@@ -302,6 +331,7 @@ async def _delete_movie(
     page: int,
     delete_channel_post: bool,
 ):
+    page = normalize_page(page)
     movie = None
     if delete_channel_post:
         try:

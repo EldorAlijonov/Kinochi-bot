@@ -6,6 +6,7 @@ from sqlalchemy.orm import load_only
 
 from app.database.models.movie import Movie
 from app.database.models.movie_base import MovieBase
+from app.database.models.movie_code_counter import MovieCodeCounter
 from app.database.models.user_action_log import UserActionLog
 
 
@@ -86,6 +87,39 @@ class MovieRepository:
         )
         return result.scalar_one_or_none() is not None
 
+    async def get_next_movie_code(self, max_code: int = 9999) -> str:
+        counter = await self._get_or_create_code_counter()
+        if counter.last_value >= max_code:
+            raise RuntimeError("Barcha kodlar band (9999 ta kino to'lgan)")
+
+        counter.last_value += 1
+        await self.session.commit()
+        return f"{counter.last_value:04d}"
+
+    async def _get_or_create_code_counter(self) -> MovieCodeCounter:
+        result = await self.session.execute(
+            select(MovieCodeCounter)
+            .where(MovieCodeCounter.id == 1)
+            .with_for_update()
+        )
+        counter = result.scalar_one_or_none()
+        if counter:
+            return counter
+
+        max_code = await self._current_max_numeric_code()
+        counter = MovieCodeCounter(id=1, last_value=max_code)
+        self.session.add(counter)
+        await self.session.commit()
+        await self.session.refresh(counter)
+        return counter
+
+    async def _current_max_numeric_code(self) -> int:
+        result = await self.session.execute(select(Movie.code))
+        return max(
+            (int(code) for code in result.scalars().all() if code and str(code).isdigit()),
+            default=0,
+        )
+
     async def get_by_storage_message(
         self,
         storage_chat_id: int,
@@ -103,7 +137,7 @@ class MovieRepository:
         result = await self.session.execute(
             select(func.count()).select_from(Movie)
         )
-        return result.scalar_one()
+        return result.scalar_one() or 0
 
     async def count_movies(self) -> int:
         return await self.count_all()
@@ -114,7 +148,7 @@ class MovieRepository:
             .select_from(Movie)
             .where(Movie.created_at >= _today_start())
         )
-        return result.scalar_one()
+        return result.scalar_one() or 0
 
     async def count_active(self) -> int:
         result = await self.session.execute(
@@ -123,7 +157,7 @@ class MovieRepository:
             .join(MovieBase, Movie.movie_base_id == MovieBase.id)
             .where(Movie.is_active.is_(True), MovieBase.is_active.is_(True))
         )
-        return result.scalar_one()
+        return result.scalar_one() or 0
 
     async def list_movies(self, limit: int, offset: int) -> list[tuple[Movie, MovieBase]]:
         result = await self.session.execute(
@@ -152,7 +186,7 @@ class MovieRepository:
             .limit(limit)
             .offset(offset)
         )
-        return result.scalars().all()
+        return list(result.scalars().all())
 
     async def delete_movie(self, code: str) -> bool:
         result = await self.session.execute(

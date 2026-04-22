@@ -14,6 +14,12 @@ from app.keyboards.admin.subscriptions import (
 )
 from app.repositories.subscription_repository import SubscriptionRepository
 from app.services.subscription_service import SubscriptionService
+from app.utils.callbacks import (
+    STALE_CALLBACK_MESSAGE,
+    normalize_offset,
+    normalize_page,
+    parse_callback_int,
+)
 from app.utils.db import safe_db_call
 from app.utils.text import safe_html
 
@@ -25,30 +31,14 @@ PAGE_SIZE = 5
 logger = logging.getLogger(__name__)
 
 
-def _normalize_page(page) -> int:
-    try:
-        return max(1, int(page or 1))
-    except (TypeError, ValueError):
-        return 1
-
-
-def _normalize_offset(offset) -> int:
-    try:
-        return max(0, int(offset or 0))
-    except (TypeError, ValueError):
-        return 0
-
-
 def _parse_status_select_callback(callback_data: str) -> tuple[int | None, int]:
-    parts = (callback_data or "").split(":")
-    subscription_id = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else None
-    page = _normalize_page(parts[3] if len(parts) > 3 else 1)
+    subscription_id = parse_callback_int(callback_data, 2)
+    page = normalize_page(parse_callback_int(callback_data, 3, default=1))
     return subscription_id, page
 
 
 def _parse_status_page_callback(callback_data: str) -> int:
-    parts = (callback_data or "").split(":")
-    return _normalize_page(parts[2] if len(parts) > 2 else 1)
+    return normalize_page(parse_callback_int(callback_data, 2, default=1))
 
 
 def build_subscription_type_label(subscription_type: str) -> str:
@@ -73,7 +63,7 @@ def _build_address_line(sub) -> str:
 
 
 async def build_subscription_status_list(page: int, target_active: bool):
-    page = _normalize_page(page)
+    page = normalize_page(page)
 
     async def operation():
         async with async_session_maker() as session:
@@ -105,8 +95,8 @@ async def build_subscription_status_list(page: int, target_active: bool):
 
     subscriptions, page, total_pages, offset, total_count = data
     subscriptions = list(subscriptions or [])
-    page = _normalize_page(page)
-    offset = _normalize_offset(offset)
+    page = normalize_page(page)
+    offset = normalize_offset(offset)
     if total_count == 0 or not subscriptions:
         return "Obunalar topilmadi.", None, page
 
@@ -210,7 +200,7 @@ async def keep_subscription_status_page(callback: CallbackQuery):
 async def activate_subscription(callback: CallbackQuery):
     subscription_id, page = _parse_status_select_callback(callback.data)
     if subscription_id is None:
-        await callback.answer("Callback ma'lumoti noto'g'ri.", show_alert=True)
+        await callback.answer(STALE_CALLBACK_MESSAGE, show_alert=True)
         return
 
     await _set_subscription_status(
@@ -225,7 +215,7 @@ async def activate_subscription(callback: CallbackQuery):
 async def deactivate_subscription(callback: CallbackQuery):
     subscription_id, page = _parse_status_select_callback(callback.data)
     if subscription_id is None:
-        await callback.answer("Callback ma'lumoti noto'g'ri.", show_alert=True)
+        await callback.answer(STALE_CALLBACK_MESSAGE, show_alert=True)
         return
 
     await _set_subscription_status(
@@ -242,7 +232,7 @@ async def _set_subscription_status(
     page: int,
     target_active: bool,
 ):
-    page = _normalize_page(page)
+    page = normalize_page(page)
 
     async def operation():
         async with async_session_maker() as session:

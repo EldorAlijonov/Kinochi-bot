@@ -26,6 +26,18 @@ class FakeMovieBaseRepository:
         movie_base.is_active = False
         return True
 
+    async def get_all_paginated(self, limit, offset):
+        return None
+
+    async def get_paginated_by_active(self, is_active, limit, offset):
+        return None
+
+    async def count_all(self):
+        return None
+
+    async def count_by_active(self, is_active):
+        return None
+
 
 class MovieBaseServiceTests(unittest.IsolatedAsyncioTestCase):
     async def test_activate_base_changes_inactive_base(self):
@@ -51,6 +63,21 @@ class MovieBaseServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result["ok"])
         self.assertFalse(movie_base.is_active)
         self.assertEqual(result["message"], "Baza noaktiv qilindi")
+
+    async def test_list_and_count_methods_return_safe_defaults(self):
+        service = MovieBaseService(FakeMovieBaseRepository())
+
+        self.assertEqual(await service.get_paginated_bases(limit=5, offset=0), [])
+        self.assertEqual(
+            await service.get_paginated_bases_by_status(
+                is_active=True,
+                limit=5,
+                offset=0,
+            ),
+            [],
+        )
+        self.assertEqual(await service.count_bases(), 0)
+        self.assertEqual(await service.count_bases_by_status(True), 0)
 
 
 if __name__ == "__main__":

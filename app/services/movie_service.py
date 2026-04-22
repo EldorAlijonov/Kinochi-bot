@@ -8,11 +8,7 @@ from app.database.errors import (
     is_movie_title_schema_mismatch,
 )
 from app.utils.movie_caption import build_storage_movie_caption
-from app.utils.movie_code import (
-    MAX_MOVIE_CODE,
-    generate_random_movie_code,
-    is_movie_code,
-)
+from app.utils.movie_code import MAX_MOVIE_CODE, is_movie_code
 from app.utils.movie_title import normalize_movie_title
 
 logger = logging.getLogger(__name__)
@@ -28,21 +24,32 @@ class MovieService:
 
     def __init__(self, movie_repository):
         self.movie_repository = movie_repository
+        self._fallback_last_code = 0
 
     @staticmethod
     def normalize_code(raw_code: str) -> str:
         return (raw_code or "").strip()
 
     async def generate_unique_code(self) -> str:
-        if await self.movie_repository.count_all() >= MAX_MOVIE_CODE:
-            raise MovieCodePoolExhaustedError(
-                "Barcha kodlar band (9999 ta kino to'lgan)"
-            )
+        if hasattr(self.movie_repository, "get_next_movie_code"):
+            try:
+                return await self.movie_repository.get_next_movie_code(MAX_MOVIE_CODE)
+            except RuntimeError as error:
+                raise MovieCodePoolExhaustedError(str(error)) from error
 
-        while True:
-            code = generate_random_movie_code()
+        if await self.movie_repository.count_all() >= MAX_MOVIE_CODE:
+            raise MovieCodePoolExhaustedError("Barcha kodlar band (9999 ta kino to'lgan)")
+
+        last_movie = await self.movie_repository.get_last_movie()
+        last_code = int(last_movie.code) if last_movie and is_movie_code(last_movie.code) else 0
+        last_code = max(last_code, self._fallback_last_code)
+        for next_code in range(last_code + 1, MAX_MOVIE_CODE + 1):
+            code = f"{next_code:04d}"
             if not await self.movie_repository.exists_by_code(code):
+                self._fallback_last_code = next_code
                 return code
+
+        raise MovieCodePoolExhaustedError("Barcha kodlar band (9999 ta kino to'lgan)")
 
     @staticmethod
     def _database_error_message(error: SQLAlchemyError) -> str:

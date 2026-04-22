@@ -44,15 +44,32 @@ class FakeMovieRepository:
         return len(self.movies)
 
 
+class CounterMovieRepository(FakeMovieRepository):
+    def __init__(self):
+        super().__init__()
+        self.counter = 0
+
+    async def get_next_movie_code(self, max_code: int = 9999):
+        self.counter += 1
+        return f"{self.counter:04d}"
+
+
 class MovieServiceTests(unittest.IsolatedAsyncioTestCase):
     async def test_generate_unique_code_returns_four_digit_code(self):
-        repository = FakeMovieRepository()
+        repository = CounterMovieRepository()
         service = MovieService(repository)
 
         code = await service.generate_unique_code()
 
         self.assertRegex(code, r"^\d{4}$")
         self.assertNotEqual(code, "0000")
+
+    async def test_generate_unique_code_uses_atomic_counter_when_available(self):
+        repository = CounterMovieRepository()
+        service = MovieService(repository)
+
+        self.assertEqual(await service.generate_unique_code(), "0001")
+        self.assertEqual(await service.generate_unique_code(), "0002")
 
     async def test_generate_unique_code_skips_existing_code(self):
         repository = FakeMovieRepository()

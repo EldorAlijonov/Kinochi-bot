@@ -33,6 +33,7 @@ from app.repositories.user_repository import UserRepository
 from app.services.broadcast_service import BroadcastService
 from app.services.user_management_service import UserManagementService
 from app.states.user_management import BroadcastState, UserBanState, UserSearchState, UserUnbanState
+from app.utils.callbacks import normalize_page, parse_callback_int
 
 router = Router()
 router.message.filter(AdminFilter())
@@ -139,12 +140,20 @@ async def show_inactive_users(message: Message):
 
 @router.callback_query(F.data.startswith("users_active:page:"))
 async def paginate_active_users(callback: CallbackQuery):
-    await _edit_users_list(callback, "active", int(callback.data.split(":")[2]))
+    await _edit_users_list(
+        callback,
+        "active",
+        normalize_page(parse_callback_int(callback.data, 2, default=1)),
+    )
 
 
 @router.callback_query(F.data.startswith("users_inactive:page:"))
 async def paginate_inactive_users(callback: CallbackQuery):
-    await _edit_users_list(callback, "inactive", int(callback.data.split(":")[2]))
+    await _edit_users_list(
+        callback,
+        "inactive",
+        normalize_page(parse_callback_int(callback.data, 2, default=1)),
+    )
 
 
 @router.callback_query(F.data.in_({"users_active:current", "users_inactive:current"}))
@@ -311,6 +320,7 @@ async def _send_users_list(message: Message, list_type: str, page: int) -> None:
 
 
 async def _edit_users_list(callback: CallbackQuery, list_type: str, page: int) -> None:
+    page = normalize_page(page)
     try:
         text, page, total_pages = await _build_users_list(list_type, page)
     except SQLAlchemyError:

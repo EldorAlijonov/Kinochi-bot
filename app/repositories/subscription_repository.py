@@ -168,7 +168,7 @@ class SubscriptionRepository:
             .where(Subscription.is_active.is_(True))
             .order_by(Subscription.id.desc())
         )
-        return result.scalars().all()
+        return list(result.scalars().all())
 
     async def list_active_subscriptions(self) -> list[Subscription]:
         return await self.get_active()
@@ -201,13 +201,13 @@ class SubscriptionRepository:
             .where(Subscription.is_active.is_(False))
             .order_by(Subscription.id.desc())
         )
-        return result.scalars().all()
+        return list(result.scalars().all())
 
     async def get_all(self) -> list[Subscription]:
         result = await self.session.execute(
             select(Subscription).order_by(Subscription.id.desc())
         )
-        return result.scalars().all()
+        return list(result.scalars().all())
 
     async def get_all_paginated(self, limit: int, offset: int):
         result = await self.session.execute(
@@ -216,7 +216,7 @@ class SubscriptionRepository:
             .limit(limit)
             .offset(offset)
         )
-        return result.scalars().all()
+        return list(result.scalars().all())
 
     async def get_paginated_by_active(
         self,
@@ -231,13 +231,13 @@ class SubscriptionRepository:
             .limit(limit)
             .offset(offset)
         )
-        return result.scalars().all()
+        return list(result.scalars().all())
 
     async def count_all(self) -> int:
         result = await self.session.execute(
             select(func.count()).select_from(Subscription)
         )
-        return result.scalar_one()
+        return result.scalar_one() or 0
 
     async def count_subscriptions(self) -> int:
         return await self.count_all()
@@ -251,7 +251,7 @@ class SubscriptionRepository:
             .select_from(Subscription)
             .where(Subscription.is_active.is_(is_active))
         )
-        return result.scalar_one()
+        return result.scalar_one() or 0
 
     async def get_by_id(self, subscription_id: int) -> Subscription | None:
         result = await self.session.execute(
@@ -290,7 +290,7 @@ class SubscriptionRepository:
                 UserActionLog.is_success.is_(True),
             )
         )
-        return result.scalar_one()
+        return result.scalar_one() or 0
 
     async def count_failed_subscription_checks(self) -> int:
         result = await self.session.execute(
@@ -299,13 +299,13 @@ class SubscriptionRepository:
                 UserActionLog.is_success.is_(False),
             )
         )
-        return result.scalar_one()
+        return result.scalar_one() or 0
 
     async def count_subscription_check_attempts(self) -> int:
         result = await self.session.execute(
             select(func.count()).where(UserActionLog.action_type == "subscription_check")
         )
-        return result.scalar_one()
+        return result.scalar_one() or 0
 
     async def get_subscription_blocking_stats(self, limit: int = 5) -> list[tuple[Subscription, int]]:
         result = await self.session.execute(

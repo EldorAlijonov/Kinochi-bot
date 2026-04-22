@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import time
 
 from aiogram.exceptions import TelegramAPIError
 from sqlalchemy.exc import SQLAlchemyError
@@ -17,6 +18,8 @@ class BroadcastWorker:
     POLL_INTERVAL_SECONDS = 3
     SCHEMA_ERROR_SLEEP_SECONDS = 60
     MAX_JOB_RETRIES = 3
+    PROGRESS_NOTIFY_INTERVAL_SECONDS = 30
+    PROGRESS_NOTIFY_EVERY_RECIPIENTS = 500
 
     def __init__(self, bot):
         self.bot = bot
@@ -77,14 +80,27 @@ class BroadcastWorker:
                     broadcast_repository=repository,
                     subscription_repository=SubscriptionRepository(session),
                 )
+                last_progress_notify_at = 0.0
+                last_progress_notify_processed = 0
 
                 async def progress_callback(processed: int, stats: dict) -> None:
+                    nonlocal last_progress_notify_at, last_progress_notify_processed
                     await repository.update_job_progress(
                         job.id,
                         processed_count=processed,
                         sent_count=stats["users"] + stats["groups"] + stats["channels"],
                         failed_count=stats["failed"],
                     )
+                    now = time.monotonic()
+                    should_notify = (
+                        processed - last_progress_notify_processed >= self.PROGRESS_NOTIFY_EVERY_RECIPIENTS
+                        or now - last_progress_notify_at >= self.PROGRESS_NOTIFY_INTERVAL_SECONDS
+                    )
+                    if not should_notify:
+                        return
+
+                    last_progress_notify_at = now
+                    last_progress_notify_processed = processed
                     if job.admin_chat_id:
                         try:
                             await self.bot.send_message(

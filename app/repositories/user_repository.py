@@ -93,7 +93,7 @@ class UserRepository:
             .order_by(User.joined_at.desc(), User.telegram_id.desc())
             .limit(limit)
         )
-        return result.scalars().all()
+        return list(result.scalars().all())
 
     async def touch_user(self, telegram_id: int, full_name: str | None, username: str | None):
         return await self.upsert_user(
@@ -119,7 +119,7 @@ class UserRepository:
             .limit(limit)
             .offset(offset)
         )
-        return result.scalars().all()
+        return list(result.scalars().all())
 
     async def list_inactive_users(self, limit: int, offset: int) -> list[User]:
         result = await self.session.execute(
@@ -129,7 +129,7 @@ class UserRepository:
             .limit(limit)
             .offset(offset)
         )
-        return result.scalars().all()
+        return list(result.scalars().all())
 
     async def count_active_users_last_7d_for_list(self) -> int:
         return await self.count_active_users_last_7d()
@@ -140,7 +140,7 @@ class UserRepository:
             .select_from(User)
             .where(User.last_active_at < _now() - timedelta(days=7))
         )
-        return result.scalar_one()
+        return result.scalar_one() or 0
 
     async def ban_user(self, telegram_id: int) -> bool:
         result = await self.session.execute(
@@ -169,13 +169,13 @@ class UserRepository:
                 UserActionLog.action_type == "movie_received",
             )
         )
-        return result.scalar_one()
+        return result.scalar_one() or 0
 
     async def count_referrals_by_user(self, telegram_id: int) -> int:
         result = await self.session.execute(
             select(func.count()).select_from(User).where(User.referred_by == telegram_id)
         )
-        return result.scalar_one()
+        return result.scalar_one() or 0
 
     async def list_broadcast_user_ids(
         self,
@@ -252,13 +252,13 @@ class UserRepository:
 
     async def count_users(self) -> int:
         result = await self.session.execute(select(func.count()).select_from(User))
-        return result.scalar_one()
+        return result.scalar_one() or 0
 
     async def count_users_joined_today(self) -> int:
         result = await self.session.execute(
             select(func.count()).select_from(User).where(User.joined_at >= _today_start())
         )
-        return result.scalar_one()
+        return result.scalar_one() or 0
 
     async def count_active_users_today(self) -> int:
         result = await self.session.execute(
@@ -266,7 +266,7 @@ class UserRepository:
             .select_from(User)
             .where(User.last_active_at >= _today_start())
         )
-        return result.scalar_one()
+        return result.scalar_one() or 0
 
     async def count_active_users_last_24h(self) -> int:
         result = await self.session.execute(
@@ -274,7 +274,7 @@ class UserRepository:
             .select_from(User)
             .where(User.last_active_at >= _now() - timedelta(hours=24))
         )
-        return result.scalar_one()
+        return result.scalar_one() or 0
 
     async def count_active_users_last_7d(self) -> int:
         result = await self.session.execute(
@@ -282,7 +282,7 @@ class UserRepository:
             .select_from(User)
             .where(User.last_active_at >= _now() - timedelta(days=7))
         )
-        return result.scalar_one()
+        return result.scalar_one() or 0
 
     async def count_users_received_movie_today(self) -> int:
         result = await self.session.execute(
@@ -291,7 +291,7 @@ class UserRepository:
                 UserActionLog.created_at >= _today_start(),
             )
         )
-        return result.scalar_one()
+        return result.scalar_one() or 0
 
     async def count_users_sent_code_today(self) -> int:
         result = await self.session.execute(
@@ -300,7 +300,7 @@ class UserRepository:
                 UserActionLog.created_at >= _today_start(),
             )
         )
-        return result.scalar_one()
+        return result.scalar_one() or 0
 
     async def count_referral_users(self) -> int:
         result = await self.session.execute(

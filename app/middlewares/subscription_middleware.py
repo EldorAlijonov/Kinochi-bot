@@ -105,7 +105,8 @@ class SubscriptionMiddleware(BaseMiddleware):
 
         text = check_error_message or (
             "Botdan foydalanish uchun quyidagi kanallar yoki guruhlarga "
-            "a'zo bo'ling.\n\nObuna bo'lgach, qayta tekshiring."
+            "a'zo bo'ling.\n\nObuna bo'lgach, qayta tekshiring. "
+            "Homiy havolalar ko'rsatma sifatida beriladi va avtomatik tekshirilmaydi."
         )
 
         reply_markup = subscription_check_keyboard(

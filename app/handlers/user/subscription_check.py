@@ -12,6 +12,7 @@ from app.repositories.user_repository import UserRepository
 from app.services.movie_delivery_service import MovieDeliveryService
 from app.services.movie_request_context import clear_pending_movie_code, pop_pending_movie_code
 from app.services.subscription_service import SubscriptionService
+from app.utils.callbacks import parse_callback_parts
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -30,7 +31,7 @@ def _serialize_subscription(sub) -> dict:
 @router.callback_query(F.data.startswith("check_subscriptions"))
 async def check_subscriptions(callback: CallbackQuery):
     user_id = callback.from_user.id
-    callback_parts = (callback.data or "").split(":")
+    callback_parts = parse_callback_parts(callback.data, min_parts=1) or []
     requested_movie_code = None
     if len(callback_parts) == 3 and callback_parts[1] == "movie":
         requested_movie_code = callback_parts[2]
@@ -52,7 +53,7 @@ async def check_subscriptions(callback: CallbackQuery):
                 bot=callback.bot,
                 user_id=user_id,
                 subscriptions=telegram_subscriptions,
-                use_cache=False,
+                use_cache=not bool(requested_movie_code),
             )
             unsubscribed_channels = check_result["unsubscribed_channels"] + [
                 item["subscription"] for item in check_result["uncheckable_channels"]
@@ -130,7 +131,7 @@ async def check_subscriptions(callback: CallbackQuery):
 
         try:
             await callback.message.edit_text(
-                "Barcha obunalar bajarilgan. Kino kodiniyuboring!."
+                "Barcha Telegram obunalar bajarilgan. Kino kodini yuboring."
             )
         except TelegramBadRequest as error:
             if "message is not modified" not in str(error):
@@ -141,7 +142,8 @@ async def check_subscriptions(callback: CallbackQuery):
 
     text = check_error_message or (
         "Siz hali quyidagi obunalarga ulanmagansiz.\n\n"
-        "Iltimos, obuna bo'lib qayta tekshiring."
+        "Iltimos, Telegram obunalarga a'zo bo'lib qayta tekshiring. "
+        "Homiy havolalar ko'rsatma sifatida beriladi va avtomatik tekshirilmaydi."
     )
 
     try:

@@ -13,6 +13,7 @@ from app.keyboards.admin.subscription_delete_inline import subscription_delete_k
 from app.repositories.subscription_repository import SubscriptionRepository
 from app.services.subscription_service import SubscriptionService
 from app.states.subscription import DeleteSubscriptionState
+from app.utils.callbacks import STALE_CALLBACK_MESSAGE, normalize_offset, normalize_page, parse_callback_int
 from app.utils.db import safe_db_call
 from app.utils.text import safe_html
 
@@ -43,18 +44,20 @@ def _build_address_line(sub) -> str:
 
 
 async def build_delete_list_text(page: int):
+    page = normalize_page(page)
+
     async def operation():
         async with async_session_maker() as session:
             repository = SubscriptionRepository(session)
             service = SubscriptionService(repository)
 
-            total_count = await service.count_all_subscriptions()
+            total_count = await service.count_all_subscriptions() or 0
             if total_count == 0:
                 return None, None, 0, None, None
 
             total_pages = math.ceil(total_count / PAGE_SIZE)
             current_page = max(1, min(page, total_pages))
-            offset = (current_page - 1) * PAGE_SIZE
+            offset = normalize_offset((current_page - 1) * PAGE_SIZE)
             subscriptions = await service.get_paginated_subscriptions(
                 limit=PAGE_SIZE,
                 offset=offset,
@@ -70,6 +73,9 @@ async def build_delete_list_text(page: int):
         return "Obunalar ro'yxatini olishda vaqtinchalik xatolik yuz berdi.", None, 1
 
     subscriptions, page, total_pages, offset, total_count = data
+    subscriptions = list(subscriptions or [])
+    page = normalize_page(page)
+    offset = normalize_offset(offset)
     if total_count == 0:
         return None, None, 0
 
@@ -79,7 +85,7 @@ async def build_delete_list_text(page: int):
         "",
     ]
 
-    for index, sub in enumerate(subscriptions, start=1):
+    for index, sub in enumerate(subscriptions, start=offset + 1):
         status = "Aktiv" if sub.is_active else "Noaktiv"
         lines.append(
             f"{index}. <b>{safe_html(sub.title)}</b>\n"
@@ -125,7 +131,7 @@ async def show_delete_list(message: Message, state: FSMContext):
     F.data.startswith("delete_subscription_page:"),
 )
 async def paginate_delete_list(callback: CallbackQuery):
-    page = int(callback.data.split(":")[1])
+    page = normalize_page(parse_callback_int(callback.data, 1, default=1))
     text, keyboard, _ = await build_delete_list_text(page=page)
 
     if not text:
@@ -154,9 +160,11 @@ async def keep_delete_page(callback: CallbackQuery):
     F.data.startswith("delete_subscription:"),
 )
 async def delete_subscription_handler(callback: CallbackQuery, state: FSMContext):
-    _, subscription_id_str, page_str = callback.data.split(":")
-    subscription_id = int(subscription_id_str)
-    page = int(page_str)
+    subscription_id = parse_callback_int(callback.data, 1)
+    page = normalize_page(parse_callback_int(callback.data, 2, default=1))
+    if subscription_id is None:
+        await callback.answer(STALE_CALLBACK_MESSAGE, show_alert=True)
+        return
 
     async def operation():
         async with async_session_maker() as session:

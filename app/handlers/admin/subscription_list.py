@@ -12,6 +12,7 @@ from app.keyboards.admin.subscription_list_inline import (
 )
 from app.repositories.subscription_repository import SubscriptionRepository
 from app.services.subscription_service import SubscriptionService
+from app.utils.callbacks import normalize_offset, normalize_page, parse_callback_int
 from app.utils.db import safe_db_call
 from app.utils.text import safe_html
 
@@ -31,18 +32,20 @@ def _build_address_line(sub) -> str:
 
 
 async def build_subscription_list_text(page: int):
+    page = normalize_page(page)
+
     async def operation():
         async with async_session_maker() as session:
             repository = SubscriptionRepository(session)
             service = SubscriptionService(repository)
 
-            total_count = await service.count_all_subscriptions()
+            total_count = await service.count_all_subscriptions() or 0
             if total_count == 0:
                 return None, None, None, None, None
 
             total_pages = math.ceil(total_count / PAGE_SIZE)
             current_page = max(1, min(page, total_pages))
-            offset = (current_page - 1) * PAGE_SIZE
+            offset = normalize_offset((current_page - 1) * PAGE_SIZE)
             subscriptions = await service.get_paginated_subscriptions(
                 limit=PAGE_SIZE,
                 offset=offset,
@@ -58,6 +61,9 @@ async def build_subscription_list_text(page: int):
         return "Obunalar ro'yxatini olishda vaqtinchalik xatolik yuz berdi.", None
 
     subscriptions, page, total_pages, offset, total_count = data
+    subscriptions = list(subscriptions or [])
+    offset = normalize_offset(offset)
+    page = normalize_page(page)
     if total_count == 0:
         return None, None
 
@@ -105,7 +111,7 @@ async def show_subscription_list(message: Message):
 
 @router.callback_query(F.data.startswith("subscription_list:"))
 async def paginate_subscription_list(callback: CallbackQuery):
-    page = int(callback.data.split(":")[1])
+    page = normalize_page(parse_callback_int(callback.data, 1, default=1))
     text, keyboard = await build_subscription_list_text(page=page)
 
     if not text:

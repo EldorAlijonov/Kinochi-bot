@@ -14,7 +14,13 @@ def _parse_admins(raw_value: str | None) -> list[int]:
     for chunk in raw_value.split(","):
         candidate = chunk.strip()
         if candidate:
-            admins.append(int(candidate))
+            try:
+                admins.append(int(candidate))
+            except ValueError as error:
+                raise RuntimeError(
+                    f"ADMINS ichida noto'g'ri Telegram ID bor: {candidate!r}. "
+                    "Qiymatlar vergul bilan ajratilgan raqamlar bo'lishi kerak."
+                ) from error
 
     return admins
 
@@ -111,7 +117,7 @@ def load_settings() -> Settings:
             (os.getenv("SUBSCRIPTION_STATUS_CACHE_TTL_SECONDS") or "60").strip()
         ),
         subscription_gate_fail_open=(
-            os.getenv("SUBSCRIPTION_GATE_FAIL_OPEN") or "true"
+            os.getenv("SUBSCRIPTION_GATE_FAIL_OPEN") or "false"
         ).strip().lower()
         == "true",
         pending_movie_ttl_seconds=int(

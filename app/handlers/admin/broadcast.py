@@ -137,12 +137,21 @@ async def choose_broadcast_target(message: types.Message, state: FSMContext):
     await state.update_data(target_type=target_type)
     await state.set_state(BroadcastSendState.confirming)
 
+    try:
+        async with async_session_maker() as session:
+            service = _build_broadcast_service(session)
+            estimate = await service.estimate_recipients(target_type)
+    except SQLAlchemyError:
+        logger.exception("Reklama auditoriyasini hisoblashda database xatosi")
+        estimate = None
+
     service = BroadcastService(user_repository=None)
     await message.answer(
         service.build_campaign_preview(
             content_type=data["content_type"],
             text=data.get("text"),
             target_type=target_type,
+            estimate=estimate,
         ),
         reply_markup=broadcast_confirm_menu,
     )

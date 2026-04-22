@@ -233,7 +233,7 @@ class BroadcastRepository:
         result = await self.session.execute(
             select(func.count()).select_from(BroadcastCampaign)
         )
-        return result.scalar_one()
+        return result.scalar_one() or 0
 
     async def get_campaign_by_id(self, campaign_id: int) -> BroadcastCampaign | None:
         result = await self.session.execute(

@@ -63,7 +63,7 @@ class MovieBaseService:
         return {"ok": True, "movie_base": movie_base}
 
     async def get_paginated_bases(self, limit: int, offset: int):
-        return await self.repository.get_all_paginated(limit=limit, offset=offset)
+        return await self.repository.get_all_paginated(limit=limit, offset=offset) or []
 
     async def get_paginated_bases_by_status(
         self,
@@ -75,13 +75,13 @@ class MovieBaseService:
             is_active=is_active,
             limit=limit,
             offset=offset,
-        )
+        ) or []
 
     async def count_bases(self) -> int:
-        return await self.repository.count_all()
+        return await self.repository.count_all() or 0
 
     async def count_bases_by_status(self, is_active: bool) -> int:
-        return await self.repository.count_by_active(is_active)
+        return await self.repository.count_by_active(is_active) or 0
 
     async def get_by_id(self, movie_base_id: int):
         return await self.repository.get_by_id(movie_base_id)

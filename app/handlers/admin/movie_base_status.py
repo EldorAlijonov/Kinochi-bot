@@ -15,6 +15,7 @@ from app.keyboards.admin.movies import (
 )
 from app.repositories.movie_base_repository import MovieBaseRepository
 from app.services.movie_base_service import MovieBaseService
+from app.utils.callbacks import STALE_CALLBACK_MESSAGE, normalize_offset, normalize_page, parse_callback_int
 from app.utils.movie_base_link import format_movie_base_address
 from app.utils.text import safe_html
 
@@ -30,19 +31,20 @@ MOVIE_BASE_STATUS_ERROR_MESSAGE = (
 
 
 async def build_movie_base_status_list(page: int, target_active: bool):
+    page = normalize_page(page)
     try:
         async with async_session_maker() as session:
             repository = MovieBaseRepository(session)
             service = MovieBaseService(repository)
             source_active = not target_active
-            total_count = await service.count_bases_by_status(source_active)
+            total_count = await service.count_bases_by_status(source_active) or 0
 
             if total_count == 0:
                 return None, None, 0
 
             total_pages = max(1, math.ceil(total_count / PAGE_SIZE))
             page = max(1, min(page, total_pages))
-            offset = (page - 1) * PAGE_SIZE
+            offset = normalize_offset((page - 1) * PAGE_SIZE)
             bases = await service.get_paginated_bases_by_status(
                 is_active=source_active,
                 limit=PAGE_SIZE,
@@ -60,6 +62,10 @@ async def build_movie_base_status_list(page: int, target_active: bool):
         f"Ko'rsatilayotgan holat: {status_text}",
         "",
     ]
+
+    bases = list(bases or [])
+    if not bases:
+        return "Bazalar topilmadi.", None, page
 
     for index, movie_base in enumerate(bases, start=offset + 1):
         status = "Aktiv" if movie_base.is_active else "Noaktiv"
@@ -113,7 +119,7 @@ async def show_active_movie_bases(message: Message):
 
 @router.callback_query(F.data.startswith("movie_base_activate:page:"))
 async def paginate_inactive_movie_bases(callback: CallbackQuery):
-    page = int(callback.data.split(":")[2])
+    page = normalize_page(parse_callback_int(callback.data, 2, default=1))
     text, keyboard, _ = await build_movie_base_status_list(page=page, target_active=True)
     if not text:
         await callback.answer("Aktiv qilinadigan baza yo'q.", show_alert=True)
@@ -129,7 +135,7 @@ async def paginate_inactive_movie_bases(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith("movie_base_deactivate:page:"))
 async def paginate_active_movie_bases(callback: CallbackQuery):
-    page = int(callback.data.split(":")[2])
+    page = normalize_page(parse_callback_int(callback.data, 2, default=1))
     text, keyboard, _ = await build_movie_base_status_list(page=page, target_active=False)
     if not text:
         await callback.answer("Noaktiv qilinadigan baza yo'q.", show_alert=True)
@@ -151,22 +157,28 @@ async def keep_movie_base_status_page(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith("movie_base_activate:select:"))
 async def activate_movie_base(callback: CallbackQuery):
-    _, _, base_id_str, page_str = callback.data.split(":")
+    base_id = parse_callback_int(callback.data, 2)
+    if base_id is None:
+        await callback.answer(STALE_CALLBACK_MESSAGE, show_alert=True)
+        return
     await _set_movie_base_status(
         callback,
-        base_id=int(base_id_str),
-        page=int(page_str),
+        base_id=base_id,
+        page=normalize_page(parse_callback_int(callback.data, 3, default=1)),
         target_active=True,
     )
 
 
 @router.callback_query(F.data.startswith("movie_base_deactivate:select:"))
 async def deactivate_movie_base(callback: CallbackQuery):
-    _, _, base_id_str, page_str = callback.data.split(":")
+    base_id = parse_callback_int(callback.data, 2)
+    if base_id is None:
+        await callback.answer(STALE_CALLBACK_MESSAGE, show_alert=True)
+        return
     await _set_movie_base_status(
         callback,
-        base_id=int(base_id_str),
-        page=int(page_str),
+        base_id=base_id,
+        page=normalize_page(parse_callback_int(callback.data, 3, default=1)),
         target_active=False,
     )
 
@@ -177,6 +189,7 @@ async def _set_movie_base_status(
     page: int,
     target_active: bool,
 ):
+    page = normalize_page(page)
     try:
         async with async_session_maker() as session:
             repository = MovieBaseRepository(session)

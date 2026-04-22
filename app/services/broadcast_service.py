@@ -4,9 +4,10 @@ import re
 from dataclasses import dataclass
 from html import unescape
 
-from aiogram.exceptions import TelegramAPIError, TelegramBadRequest, TelegramForbiddenError
+from aiogram.exceptions import TelegramAPIError, TelegramBadRequest, TelegramForbiddenError, TelegramRetryAfter
 
 from app.utils.datetime import format_local_datetime
+from app.utils.telegram_errors import call_telegram_with_retry, classify_telegram_error
 from app.utils.text import safe_html
 
 logger = logging.getLogger(__name__)
@@ -24,6 +25,7 @@ class BroadcastService:
     BATCH_SIZE = 100
     DELIVERY_FLUSH_SIZE = 100
     PROGRESS_INTERVAL = 500
+    PROGRESS_MIN_SECONDS = 30
     SLEEP_SECONDS = 0.05
 
     TARGET_LABELS = {
@@ -203,12 +205,33 @@ class BroadcastService:
         await self.broadcast_repository.mark_campaign_deleted(campaign.id, status=status)
         return stats
 
-    def build_campaign_preview(self, content_type: str, text: str | None, target_type: str) -> str:
+    async def estimate_recipients(self, target_type: str) -> dict:
+        users = await self.user_repository.count_users() if self.user_repository and target_type in {"users", "all"} else 0
+        groups = len(await self.subscription_repository.list_group_targets()) if self.subscription_repository and target_type in {"groups", "all"} else 0
+        channels = len(await self.subscription_repository.list_channel_targets()) if self.subscription_repository and target_type in {"channels", "all"} else 0
+        return {"users": users or 0, "groups": groups, "channels": channels}
+
+    def build_campaign_preview(
+        self,
+        content_type: str,
+        text: str | None,
+        target_type: str,
+        estimate: dict | None = None,
+    ) -> str:
         preview = safe_html(self.clean_preview_text(text))
+        estimate_text = ""
+        if estimate:
+            estimate_text = (
+                "\n"
+                f"Taxminiy userlar: <b>{estimate.get('users', 0)}</b>\n"
+                f"Taxminiy guruhlar: <b>{estimate.get('groups', 0)}</b>\n"
+                f"Taxminiy kanallar: <b>{estimate.get('channels', 0)}</b>\n"
+            )
         return (
             "📢 <b>Reklama tasdiqlash</b>\n\n"
             f"Turi: <b>{self.CONTENT_LABELS.get(content_type, content_type)}</b>\n"
             f"Auditoriya: <b>{self.TARGET_LABELS.get(target_type, target_type)}</b>\n"
+            f"{estimate_text}"
             f"Preview: {preview}\n\n"
             "Yuborishni tasdiqlaysizmi?"
         )
@@ -302,20 +325,12 @@ class BroadcastService:
                 target.identifier,
                 error,
             )
-        except TelegramForbiddenError as error:
+        except (TelegramForbiddenError, TelegramBadRequest, TelegramRetryAfter) as error:
             await self._record_failed_delivery(campaign.id, target, str(error))
             self._increment_failed_stats(stats, target.target_type)
             logger.warning(
-                "Reklama yuborilmadi: bot targetga kira olmaydi yoki admin emas | target_type=%s target=%s error=%s",
-                target.target_type,
-                target.identifier,
-                error,
-            )
-        except TelegramBadRequest as error:
-            await self._record_failed_delivery(campaign.id, target, str(error))
-            self._increment_failed_stats(stats, target.target_type)
-            logger.warning(
-                "Reklama yuborilmadi: chat_id/username noto'g'ri yoki Telegram rad etdi | target_type=%s target=%s error=%s",
+                "Reklama yuborilmadi | error_type=%s target_type=%s target=%s error=%s",
+                classify_telegram_error(error),
                 target.target_type,
                 target.identifier,
                 error,
@@ -341,26 +356,58 @@ class BroadcastService:
         file_id = getattr(campaign, "file_id", None)
 
         if campaign.content_type == "text":
-            return await bot.send_message(chat_id=chat_id, text=text or "")
+            return await call_telegram_with_retry(
+                lambda: bot.send_message(chat_id=chat_id, text=text or ""),
+                logger=logger,
+                context=f"broadcast send_message | chat_id={chat_id}",
+            )
 
         if file_id:
             if campaign.content_type == "photo":
-                return await bot.send_photo(chat_id=chat_id, photo=file_id, caption=text)
+                return await call_telegram_with_retry(
+                    lambda: bot.send_photo(chat_id=chat_id, photo=file_id, caption=text),
+                    logger=logger,
+                    context=f"broadcast send_photo | chat_id={chat_id}",
+                )
             if campaign.content_type == "video":
-                return await bot.send_video(chat_id=chat_id, video=file_id, caption=text)
+                return await call_telegram_with_retry(
+                    lambda: bot.send_video(chat_id=chat_id, video=file_id, caption=text),
+                    logger=logger,
+                    context=f"broadcast send_video | chat_id={chat_id}",
+                )
             if campaign.content_type == "document":
-                return await bot.send_document(chat_id=chat_id, document=file_id, caption=text)
+                return await call_telegram_with_retry(
+                    lambda: bot.send_document(chat_id=chat_id, document=file_id, caption=text),
+                    logger=logger,
+                    context=f"broadcast send_document | chat_id={chat_id}",
+                )
             if campaign.content_type == "animation":
-                return await bot.send_animation(chat_id=chat_id, animation=file_id, caption=text)
+                return await call_telegram_with_retry(
+                    lambda: bot.send_animation(chat_id=chat_id, animation=file_id, caption=text),
+                    logger=logger,
+                    context=f"broadcast send_animation | chat_id={chat_id}",
+                )
             if campaign.content_type == "audio":
-                return await bot.send_audio(chat_id=chat_id, audio=file_id, caption=text)
+                return await call_telegram_with_retry(
+                    lambda: bot.send_audio(chat_id=chat_id, audio=file_id, caption=text),
+                    logger=logger,
+                    context=f"broadcast send_audio | chat_id={chat_id}",
+                )
             if campaign.content_type == "voice":
-                return await bot.send_voice(chat_id=chat_id, voice=file_id, caption=text)
+                return await call_telegram_with_retry(
+                    lambda: bot.send_voice(chat_id=chat_id, voice=file_id, caption=text),
+                    logger=logger,
+                    context=f"broadcast send_voice | chat_id={chat_id}",
+                )
 
-        return await bot.copy_message(
-            chat_id=chat_id,
-            from_chat_id=campaign.source_chat_id,
-            message_id=campaign.source_message_id,
+        return await call_telegram_with_retry(
+            lambda: bot.copy_message(
+                chat_id=chat_id,
+                from_chat_id=campaign.source_chat_id,
+                message_id=campaign.source_message_id,
+            ),
+            logger=logger,
+            context=f"broadcast copy_message | chat_id={chat_id}",
         )
 
     async def _record_failed_delivery(self, campaign_id: int, target: BroadcastTarget, error: str):

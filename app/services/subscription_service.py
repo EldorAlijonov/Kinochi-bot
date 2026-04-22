@@ -222,14 +222,14 @@ class SubscriptionService:
                 if cached is not None:
                     return cached
 
-        subscriptions = await self.repository.get_active()
+        subscriptions = await self.repository.get_active() or []
         if use_cache:
             return await self._cache_active_subscriptions(subscriptions)
 
         return subscriptions
 
     async def get_all_subscriptions(self):
-        return await self.repository.get_all()
+        return await self.repository.get_all() or []
 
     async def get_paginated_subscriptions(self, limit: int, offset: int):
         return await self.repository.get_all_paginated(
@@ -250,10 +250,10 @@ class SubscriptionService:
         ) or []
 
     async def count_all_subscriptions(self) -> int:
-        return await self.repository.count_all()
+        return await self.repository.count_all() or 0
 
     async def count_subscriptions_by_status(self, is_active: bool) -> int:
-        return await self.repository.count_by_active(is_active)
+        return await self.repository.count_by_active(is_active) or 0
 
     async def get_unsubscribed_channels(self, bot, user_id: int, subscriptions):
         result = await self.check_subscription_status(bot, user_id, subscriptions)
