@@ -68,8 +68,7 @@ async def handle_movie_code_request(message: types.Message):
             return
         await message.answer(
             check_error_message
-            or "Kinoni olish uchun avval majburiy obunalarga a'zo bo'ling. "
-            "Homiy havolalar alohida ko'rsatiladi, ular Telegram orqali avtomatik tekshirilmaydi.",
+            or "Kinoni olish uchun avval kanlalarga a'zo bo'ling. ",
             reply_markup=build_subscription_keyboard(
                 unsubscribed_channels,
                 external_links,

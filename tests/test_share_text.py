@@ -30,13 +30,16 @@ class ShareTextTests(unittest.TestCase):
         self.assertIn("Kirish:", text)
         self.assertIn("https://t.me/my_movie_bot?start=0007", text)
 
-    def test_movie_share_keyboard_uses_share_marker_not_raw_link(self):
+    def test_movie_share_keyboard_uses_https_share_link(self):
         from app.keyboards.user.movie import movie_share_keyboard
 
         keyboard = movie_share_keyboard("my_movie_bot", "0007")
         button = keyboard.inline_keyboard[0][0]
 
-        self.assertEqual(button.switch_inline_query_chosen_chat.query, "share_0007")
+        self.assertEqual(
+            button.switch_inline_query_chosen_chat.query,
+            "https://t.me/my_movie_bot?start=0007",
+        )
 
 
 if __name__ == "__main__":
