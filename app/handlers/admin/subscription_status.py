@@ -25,6 +25,32 @@ PAGE_SIZE = 5
 logger = logging.getLogger(__name__)
 
 
+def _normalize_page(page) -> int:
+    try:
+        return max(1, int(page or 1))
+    except (TypeError, ValueError):
+        return 1
+
+
+def _normalize_offset(offset) -> int:
+    try:
+        return max(0, int(offset or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _parse_status_select_callback(callback_data: str) -> tuple[int | None, int]:
+    parts = (callback_data or "").split(":")
+    subscription_id = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else None
+    page = _normalize_page(parts[3] if len(parts) > 3 else 1)
+    return subscription_id, page
+
+
+def _parse_status_page_callback(callback_data: str) -> int:
+    parts = (callback_data or "").split(":")
+    return _normalize_page(parts[2] if len(parts) > 2 else 1)
+
+
 def build_subscription_type_label(subscription_type: str) -> str:
     type_labels = {
         "public_channel": "Ommaviy kanal",
@@ -47,6 +73,8 @@ def _build_address_line(sub) -> str:
 
 
 async def build_subscription_status_list(page: int, target_active: bool):
+    page = _normalize_page(page)
+
     async def operation():
         async with async_session_maker() as session:
             repository = SubscriptionRepository(session)
@@ -76,6 +104,8 @@ async def build_subscription_status_list(page: int, target_active: bool):
         return "Obuna ro'yxatini olishda vaqtinchalik xatolik yuz berdi.", None, 1
 
     subscriptions, page, total_pages, offset, total_count = data
+    page = _normalize_page(page)
+    offset = _normalize_offset(offset)
     if total_count == 0:
         return None, None, 0
 
@@ -139,7 +169,7 @@ async def show_active_subscriptions(message: Message):
 
 @router.callback_query(F.data.startswith("subscription_activate:page:"))
 async def paginate_inactive_subscriptions(callback: CallbackQuery):
-    page = int(callback.data.split(":")[2])
+    page = _parse_status_page_callback(callback.data)
     text, keyboard, _ = await build_subscription_status_list(page=page, target_active=True)
     if not text:
         await callback.answer("Aktiv qilinadigan obuna yo'q.", show_alert=True)
@@ -155,7 +185,7 @@ async def paginate_inactive_subscriptions(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith("subscription_deactivate:page:"))
 async def paginate_active_subscriptions(callback: CallbackQuery):
-    page = int(callback.data.split(":")[2])
+    page = _parse_status_page_callback(callback.data)
     text, keyboard, _ = await build_subscription_status_list(page=page, target_active=False)
     if not text:
         await callback.answer("Noaktiv qilinadigan obuna yo'q.", show_alert=True)
@@ -177,22 +207,30 @@ async def keep_subscription_status_page(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith("subscription_activate:select:"))
 async def activate_subscription(callback: CallbackQuery):
-    _, _, subscription_id_str, page_str = callback.data.split(":")
+    subscription_id, page = _parse_status_select_callback(callback.data)
+    if subscription_id is None:
+        await callback.answer("Callback ma'lumoti noto'g'ri.", show_alert=True)
+        return
+
     await _set_subscription_status(
         callback,
-        subscription_id=int(subscription_id_str),
-        page=int(page_str),
+        subscription_id=subscription_id,
+        page=page,
         target_active=True,
     )
 
 
 @router.callback_query(F.data.startswith("subscription_deactivate:select:"))
 async def deactivate_subscription(callback: CallbackQuery):
-    _, _, subscription_id_str, page_str = callback.data.split(":")
+    subscription_id, page = _parse_status_select_callback(callback.data)
+    if subscription_id is None:
+        await callback.answer("Callback ma'lumoti noto'g'ri.", show_alert=True)
+        return
+
     await _set_subscription_status(
         callback,
-        subscription_id=int(subscription_id_str),
-        page=int(page_str),
+        subscription_id=subscription_id,
+        page=page,
         target_active=False,
     )
 
@@ -203,6 +241,8 @@ async def _set_subscription_status(
     page: int,
     target_active: bool,
 ):
+    page = _normalize_page(page)
+
     async def operation():
         async with async_session_maker() as session:
             repository = SubscriptionRepository(session)
