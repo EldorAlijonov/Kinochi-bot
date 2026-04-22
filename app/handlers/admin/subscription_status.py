@@ -104,10 +104,11 @@ async def build_subscription_status_list(page: int, target_active: bool):
         return "Obuna ro'yxatini olishda vaqtinchalik xatolik yuz berdi.", None, 1
 
     subscriptions, page, total_pages, offset, total_count = data
+    subscriptions = list(subscriptions or [])
     page = _normalize_page(page)
     offset = _normalize_offset(offset)
-    if total_count == 0:
-        return None, None, 0
+    if total_count == 0 or not subscriptions:
+        return "Obunalar topilmadi.", None, page
 
     action_text = "aktiv qilish" if target_active else "noaktiv qilish"
     status_text = "Noaktiv" if target_active else "Aktiv"

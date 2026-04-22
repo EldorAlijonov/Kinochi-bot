@@ -235,7 +235,7 @@ class SubscriptionService:
         return await self.repository.get_all_paginated(
             limit=limit,
             offset=offset,
-        )
+        ) or []
 
     async def get_paginated_subscriptions_by_status(
         self,
@@ -247,7 +247,7 @@ class SubscriptionService:
             is_active=is_active,
             limit=limit,
             offset=offset,
-        )
+        ) or []
 
     async def count_all_subscriptions(self) -> int:
         return await self.repository.count_all()

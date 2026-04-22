@@ -52,6 +52,12 @@ class FakeRepository:
         item.is_active = False
         return True
 
+    async def get_all_paginated(self, limit, offset):
+        return None
+
+    async def get_paginated_by_active(self, is_active, limit, offset):
+        return None
+
     async def delete_by_id(self, subscription_id):
         return False
 
@@ -96,6 +102,20 @@ class SubscriptionServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result["ok"])
         self.assertFalse(subscription.is_active)
         self.assertEqual(repository.active_calls, 2)
+
+    async def test_paginated_methods_return_empty_list_when_repository_returns_none(self):
+        repository = FakeRepository()
+        service = SubscriptionService(repository)
+
+        self.assertEqual(await service.get_paginated_subscriptions(limit=5, offset=0), [])
+        self.assertEqual(
+            await service.get_paginated_subscriptions_by_status(
+                is_active=True,
+                limit=5,
+                offset=0,
+            ),
+            [],
+        )
 
 
 if __name__ == "__main__":
