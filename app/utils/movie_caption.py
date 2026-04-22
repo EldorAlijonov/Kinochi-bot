@@ -142,7 +142,7 @@ def build_user_movie_caption_from_storage(
     bot_username: str | None = None,
 ) -> str:
     metadata = extract_admin_metadata(storage_caption, keep_size=True, title=title)
-    lines = []
+    lines = [f"{MOVIE_CODE_ICON} {title}"]
 
     if metadata:
         lines.extend(["", *metadata])

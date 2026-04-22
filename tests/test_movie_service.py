@@ -227,7 +227,7 @@ class MovieServiceTests(unittest.IsolatedAsyncioTestCase):
 
         caption = build_user_movie_caption(movie)
 
-        self.assertNotIn("Hayot Uchun Kurash", caption)
+        self.assertTrue(caption.startswith("🎬 Hayot Uchun Kurash"))
         self.assertIn("🎭 Janri: #Sarguzasht #Biografiya", caption)
         self.assertIn("Hajmi: 2.3GB", caption)
         self.assertNotIn("Kino kodi", caption)
@@ -251,7 +251,7 @@ class MovieServiceTests(unittest.IsolatedAsyncioTestCase):
 
         caption = build_user_movie_caption(movie)
 
-        self.assertEqual(caption.count("Hayot Uchun Kurash"), 0)
+        self.assertEqual(caption.count("Hayot Uchun Kurash"), 1)
         self.assertNotIn("Kino kodi", caption)
 
     def test_format_local_datetime_converts_utc_to_tashkent_time(self):
